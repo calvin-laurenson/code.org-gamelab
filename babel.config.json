@@ -1,0 +1,6 @@
+{
+  "presets": [
+    ["@babel/preset-env", { "targets": { "ie": "11" }, "loose": true }],
+    ["@babel/preset-typescript"]
+  ]
+}
