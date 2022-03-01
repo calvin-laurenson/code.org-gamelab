@@ -107,11 +107,14 @@ class Group {
 //background()
 declare function background(color: string): void
 //fill()
+declare function fill(color: string): void
 //noFill()
 //stroke()
+declare function stroke(color: string): void
 //strokeWeight()
 //rgb()
 //noStroke()
+declare function noStroke(): void
 //arc()
 //ellipse()
 //line()

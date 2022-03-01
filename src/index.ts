@@ -17,8 +17,10 @@ class Background {
 
 class GameSprite implements Drawable {
   sprite: Sprite;
+  pos: Point;
 
   constructor(x: number, y: number, spriteId: string) {
+    this.pos = { x, y };
     this.sprite = createSprite(x, y);
     this.sprite.setAnimation(spriteId);
   }
@@ -32,21 +34,29 @@ class GameSprite implements Drawable {
   onClick() {}
 }
 
-class Player extends GameSprite {
+class Player implements Drawable {
+  sprite: Sprite;
+  pos: Point = { x: 200, y: 200 }
+
   constructor() {
-    super(200, 200, "player");
+    this.sprite = createSprite(200, 200);
+    this.sprite.setAnimation("player");
     this.sprite.scale = 0.3;
   }
 
-  override draw() {
-    super.draw();
-  }
+  draw() {}
 }
 
+class Enemy extends GameSprite {
+  constructor() {
+    super(200, 200, "enemy");
+    this.sprite.scale = 0.4;
+  }
+}
 class SpriteManager {
   sprites: GameSprite[] = [];
 
-  constructor() {}
+  constructor(private game: Game) {}
 
   add(sprite: GameSprite) {
     this.sprites.push(sprite);
@@ -54,13 +64,18 @@ class SpriteManager {
 
   draw() {
     this.sprites.forEach((sprite) => {
+      const playerPos = this.game.player.pos;
+      sprite.sprite.x = (sprite.pos.x - playerPos.x) + 200;
+      sprite.sprite.y = (sprite.pos.y - playerPos.y) + 200;
       sprite.draw();
     });
   }
 }
-
+type Sides = { left: number; right: number; top: number; bottom: number };
 type Chunk = { c: number; r: number };
 type Point = { x: number; y: number };
+type Size = { w: number; h: number };
+type Area = Point & Size;
 
 function globalToChunk(pos: Point): Chunk {
   return { c: Math.floor(pos.x / 400) + 1, r: Math.floor(pos.y / 400) + 1 };
@@ -72,8 +87,17 @@ function globalToLocal(pos: Point): Point {
     x: decimalPos.x % 1,
     y: decimalPos.y % 1,
   };
+  const returnObj = {
+    x: remainingPosDecimal.x * 400,
+    y: remainingPosDecimal.y * 400,
+  };
+  // console.log(
+  //   `Original pos: ${JSON.stringify(pos)}\nDecimal pos: ${JSON.stringify(
+  //     decimalPos
+  //   )}\nRemaining pos: ${JSON.stringify(returnObj)}`
+  // );
 
-  return { x: remainingPosDecimal.x * 400, y: remainingPosDecimal.y * 400 };
+  return returnObj;
 }
 
 function parseBgId(bgId: string): Chunk {
@@ -88,36 +112,160 @@ function stringifyBgId(chunk: Chunk): string {
   return `${chunk.c}_${chunk.r}`;
 }
 
-class UIWidget implements Drawable {
-  draw() {
-      
+abstract class UIWidget implements Drawable {
+  visible: boolean = true;
+
+  draw: () => void;
+
+  constructor(public size: Area, public space: Area) {
+    this.draw = function () {
+      // console.log(this);
+
+      if (this.visible) {
+        this.drawWidget();
+      }
+    };
+  }
+
+  abstract drawWidget: () => void;
+}
+
+class TextWidget extends UIWidget {
+  text: string = "";
+  drawWidget: () => void;
+
+  constructor(size: Area, space: Area, public margin: Sides) {
+    super(size, space);
+    this.drawWidget = function () {
+      // console.log(
+      //   `drawing text to ${this.size.x + this.space.x}, ${
+      //     this.size.y + this.space.y
+      //   }`
+      // );
+      fill("black");
+      noStroke();
+      text(
+        this.text,
+        this.size.x + this.space.x + this.margin.left,
+        this.size.y + this.space.y + this.margin.top,
+        this.size.w,
+        this.size.h
+      );
+    };
   }
 }
 
-class UIScreen implements Drawable {
-  widgets: UIWidget[] = [];
-  constructor() {
-    this.widgets.push(new UIWidget());
+class ProgressWidget extends UIWidget {
+  private _progress: number = 0.5;
+
+  public get progress() {
+    return this._progress;
+  }
+  public set progress(value: number) {
+    if (value < 1 && value > 0) {
+      this._progress = value;
+    }
+  }
+
+  drawWidget: () => void;
+
+  constructor(size: Area, space: Area) {
+    super(size, space);
+    // console.log(this.draw);
+    this.drawWidget = function (): void {
+      fill("gray");
+      stroke("gray");
+      rect(
+        this.size.x + this.space.x,
+        this.size.y + this.space.y,
+        this.size.w,
+        this.size.h
+      );
+      fill("green");
+      rect(
+        this.size.x + this.space.x,
+        this.size.y + this.space.y,
+        this.size.w * this.progress,
+        this.size.h
+      );
+    };
+  }
+}
+
+abstract class UIScreen implements Drawable {
+  abstract readonly title: string;
+  abstract readonly size: Area;
+  private widgets: UIWidget[] = [];
+  constructor() {}
+
+  addWidget<T extends UIWidget>(widget: T): T {
+    this.widgets.push(widget);
+    return widget;
   }
 
   draw() {
-    this.widgets.forEach((widget) => {
-      widget.draw();
-    });
+    fill("gray");
+    stroke("black");
+    rect(this.size.x, this.size.y, this.size.w, this.size.h);
+
+    for (let i = 0; i < this.widgets.length; i++) {
+      // console.log(i);
+
+      const e = this.widgets[i];
+      // console.log(e.draw);
+
+      e.draw();
+    }
+  }
+}
+
+class SkillsScreen extends UIScreen {
+  title: string = "Skills";
+  size: Area = { x: 200 - 50, y: 200 - 50, w: 100, h: 100 };
+  testText: TextWidget;
+  testProgress: ProgressWidget;
+  constructor() {
+    super();
+    this.testText = this.addWidget(
+      new TextWidget({ x: 0, y: 0, w: 100, h: 100 }, this.size, {
+        left: 10,
+        top: 10,
+        right: 0,
+        bottom: 0,
+      })
+    );
+    this.testProgress = this.addWidget(
+      new ProgressWidget({ x: 10, y: 50, w: 100, h: 20 }, this.size)
+    );
+    // console.log(this.testProgress.draw);
+
+    this.testText.text = "Hello";
   }
 }
 
 class UIManager implements Drawable {
   screen: UIScreen | null = null;
 
+  skillsScreen = new SkillsScreen();
+
+  constructor(private game: Game) {}
 
   draw() {
-      if(this.screen){
-        this.screen.draw();
+    if (keyWentDown("e")) {
+      if (this.screen == null) {
+        this.screen = this.skillsScreen;
+        console.log("Opened Skills screen");
+      } else if (this.screen.title === this.skillsScreen.title) {
+        this.screen = null;
+        console.log("Closed Skills screen");
       }
+    }
+
+    if (this.screen) {
+      this.screen.draw();
+    }
   }
 }
-
 
 class BackgroundManager implements Drawable {
   readonly speed: number = 5;
@@ -128,11 +276,10 @@ class BackgroundManager implements Drawable {
 
   bgs: { [key: string]: Background } = {};
 
-  pos: Point = { x: 200, y: 200 };
 
   toHide: Sprite[] = [];
 
-  constructor(startingLoc: string, bgs: string[]) {
+  constructor(private game: Game, startingLoc: string, bgs: string[]) {
     for (let i = 0; i < bgs.length; i++) {
       const e = bgs[i];
       const bg = new Background(e);
@@ -144,7 +291,7 @@ class BackgroundManager implements Drawable {
         this.maxArea.y = bg.parsedBgLoc.r * 400;
       }
     }
-    console.log(JSON.stringify(this.maxArea));
+    // console.log(JSON.stringify(this.maxArea));
 
     this.loc = parseBgId(startingLoc);
   }
@@ -152,24 +299,25 @@ class BackgroundManager implements Drawable {
     this.toHide.forEach((v) => (v.visible = false));
     this.toHide = [];
     background("white");
+    const pos = this.game.player.pos;
     if (keyDown("up")) {
-      if (this.pos.y - this.speed > 0) {
-        this.pos.y -= this.speed;
+      if (pos.y - this.speed > 0) {
+        pos.y -= this.speed;
       }
     }
     if (keyDown("down")) {
-      if (this.pos.y + this.speed < this.maxArea.y) {
-        this.pos.y += this.speed;
+      if (pos.y + this.speed < this.maxArea.y) {
+        pos.y += this.speed;
       }
     }
     if (keyDown("left")) {
-      if (this.pos.x - this.speed > 0) {
-        this.pos.x -= this.speed;
+      if (pos.x - this.speed > 0) {
+        pos.x -= this.speed;
       }
     }
     if (keyDown("right")) {
-      if (this.pos.x + this.speed < this.maxArea.x) {
-        this.pos.x += this.speed;
+      if (pos.x + this.speed < this.maxArea.x) {
+        pos.x += this.speed;
       }
     }
     // this.bgs["1-1"].sprite.x = -this.pos.x + 400;
@@ -219,7 +367,7 @@ class BackgroundManager implements Drawable {
   }
 
   moveBackgrounds() {
-    const pos = this.pos;
+    const pos = this.game.player.pos;
     const localPos = globalToLocal(pos);
     const viewableBgs = this.getViewableBgs(pos);
 
@@ -240,8 +388,8 @@ class BackgroundManager implements Drawable {
         this.toHide.push(bg.sprite);
         bg.sprite.visible = true;
 
-        bg.sprite.x = 400 - localPos.x + (400 * diff.c);
-        bg.sprite.y = 400 - localPos.y + (400 * diff.r);
+        bg.sprite.x = 400 - localPos.x + 400 * diff.c;
+        bg.sprite.y = 400 - localPos.y + 400 * diff.r;
 
         // console.log(`Diff: ${diff.c}, ${diff.r}`);
 
@@ -261,37 +409,39 @@ class BackgroundManager implements Drawable {
   }
 }
 
-enum Side {
-  UP = 0,
-  DOWN = 1,
-  LEFT = 2,
-  RIGHT = 3,
-}
-
 class Game {
-  spriteManager: SpriteManager = new SpriteManager();
-  backgroundManager: BackgroundManager = new BackgroundManager("1_1", [
+  backgroundManager: BackgroundManager = new BackgroundManager(this, "1_1", [
     "1_1",
     "1_2",
+    "1_3"
   ]);
-  uiManager: UIManager = new UIManager();
+  spriteManager: SpriteManager = new SpriteManager(this);
+  uiManager: UIManager = new UIManager(this);
 
+  player: Player = new Player();
   setup() {
-    this.spriteManager.add(new Player());
+    this.spriteManager.add(new Enemy());
+    setInterval(this.backgroundLoop, 1000);
   }
+
+  backgroundLoop() {}
 
   draw() {
     this.spriteManager.draw();
     this.backgroundManager.draw();
     drawSprites();
-    this.uiManager.draw()
+    this.uiManager.draw();
+    fill("gray");
+    noStroke();
     text(
-      `${this.backgroundManager.pos.x} ${this.backgroundManager.pos.y}`,
+      `${this.player.pos.x} ${this.player.pos.y}`,
       10,
       10
     );
-    const localPos = globalToLocal(this.backgroundManager.pos);
+    const localPos = globalToLocal(this.player.pos);
     text(`${Math.round(localPos.x)} ${Math.round(localPos.y)}`, 10, 30);
+    const chunk = globalToChunk(this.player.pos);
+    text(`${chunk.c} ${chunk.r}`, 10, 50);
   }
 }
 const game = new Game();
