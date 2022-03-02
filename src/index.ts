@@ -110,11 +110,13 @@ class Player implements Drawable {
     this.game.score = 0;
     this.pos.x = 200;
     this.pos.y = 200;
-    setTimeout(() => {
-      this.isDead = false;
+  
+  }
+
+  unDie() {
+    this.isDead = false;
       this.sprite.visible = true;
       this.game.enemy.doFollow = true;
-    }, 1000);
   }
 
   setAttackAnimation() {
@@ -580,11 +582,14 @@ class Game {
     this.uiManager.draw();
 
     if(this.player.isDead){
+      if(keyWentDown("r")) this.player.unDie();
       textSize(32);
       text("You died", 140, 180);
       text(`Score: ${this.lastScore}`, 140, 220);
       text(`High Score: ${this.highScore}`, 115, 260);
+      text("Press R to restart", 80, 300);
     }
+
     
     fill("gray");
     noStroke();
