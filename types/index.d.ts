@@ -4,6 +4,7 @@ declare function createSprite(x?: number, y?: number, w?: number, h?: number): S
 
 //createEdgeSprites()
 
+declare function randomNumber(min: number, max: number): number
 
 declare class Sprite {
     
@@ -128,6 +129,8 @@ declare function text(str: string, x: number, y: number, w?: number, h?: number)
 //textAlign()
 //textFont()
 //textSize()
+declare function textSize(size: number): void
+declare function textSize(): number
 
 
 //drawSprites()

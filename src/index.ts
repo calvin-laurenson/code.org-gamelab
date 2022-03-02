@@ -2,6 +2,13 @@ interface Drawable {
   draw(): void;
 }
 
+enum Facing {
+  UP = "up",
+  DOWN = "down",
+  LEFT = "left",
+  RIGHT = "right",
+}
+
 class Background {
   sprite: Sprite;
   bgId: string;
@@ -18,8 +25,10 @@ class Background {
 class GameSprite implements Drawable {
   sprite: Sprite;
   pos: Point;
+  manager: SpriteManager;
 
-  constructor(x: number, y: number, spriteId: string) {
+  constructor(manager: SpriteManager, x: number, y: number, spriteId: string) {
+    this.manager = manager;
     this.pos = { x, y };
     this.sprite = createSprite(x, y);
     this.sprite.setAnimation(spriteId);
@@ -36,27 +45,140 @@ class GameSprite implements Drawable {
 
 class Player implements Drawable {
   sprite: Sprite;
-  pos: Point = { x: 200, y: 200 }
+  pos: Point = { x: 200, y: 200 };
+  lastDirection: Facing = Facing.DOWN;
+  isAttacking = false;
+  isDead = false;
 
-  constructor() {
+  constructor(private game: Game) {
     this.sprite = createSprite(200, 200);
-    this.sprite.setAnimation("player");
-    this.sprite.scale = 0.3;
+    this.sprite.setAnimation("player-down");
+    this.sprite.scale = 1;
   }
 
-  draw() {}
+  draw() {
+    const newDirection = this.getNewDirection();
+    if (newDirection !== this.lastDirection) {
+      this.lastDirection = newDirection;
+      if (this.isAttacking) {
+        this.setAttackAnimation();
+      } else {
+        this.setWalkAnimation();
+      }
+    }
+    if (keyWentDown("space")) {
+      console.log("attack");
+
+      this.attack();
+    }
+
+    if (this.isAttacking) {
+      if (this.sprite.isTouching(this.game.enemy.sprite)) {
+        this.game.enemy.die();
+      }
+    }
+
+    if (this.sprite.isTouching(this.game.enemy.sprite)) {
+      setTimeout(() => {
+        if (this.sprite.isTouching(this.game.enemy.sprite)) {
+          this.die();
+        }
+      }, 200);
+    }
+  }
+
+  attack() {
+    if (!this.isAttacking) {
+      this.isAttacking = true;
+      this.setAttackAnimation();
+      setTimeout(() => {
+        this.setWalkAnimation();
+        this.isAttacking = false;
+      }, 100);
+    }
+  }
+
+  die() {
+    this.isDead = true;
+    this.sprite.visible = false;
+    this.game.enemy.doFollow = false;
+    this.game.lastScore = this.game.score;
+    if(this.game.score > this.game.highScore) {
+      this.game.highScore = this.game.score;
+    }
+    this.game.enemy.die();
+    this.game.score = 0;
+    this.pos.x = 200;
+    this.pos.y = 200;
+    setTimeout(() => {
+      this.isDead = false;
+      this.sprite.visible = true;
+      this.game.enemy.doFollow = true;
+    }, 1000);
+  }
+
+  setAttackAnimation() {
+    this.sprite.setAnimation(`player-attack-${this.lastDirection}`);
+  }
+
+  setWalkAnimation() {
+    this.sprite.setAnimation(`player-${this.lastDirection}`);
+  }
+
+  getNewDirection(): Facing {
+    const pressedButtons = this.game.backgroundManager.pressedKeys;
+
+    if (pressedButtons.up) {
+      return Facing.UP;
+    }
+    if (pressedButtons.down) {
+      return Facing.DOWN;
+    }
+    if (pressedButtons.left) {
+      return Facing.LEFT;
+    }
+    if (pressedButtons.right) {
+      return Facing.RIGHT;
+    }
+
+    return this.lastDirection;
+  }
 }
 
 class Enemy extends GameSprite {
-  constructor() {
-    super(200, 200, "enemy");
-    this.sprite.scale = 0.4;
+  doFollow = true;
+
+  followSpeed = 0.03;
+  maxSpeed = 3;
+
+  constructor(manager: SpriteManager) {
+    super(manager, 600, 600, "enemy");
+    this.sprite.scale = 1;
+  }
+
+  draw() {
+    super.draw();
+    //If follow is enabled, follow the player
+    if (this.doFollow) {
+      const relativePos = subtract(this.manager.game.player.pos, this.pos);
+      this.pos.x =
+        this.pos.x + Math.min(relativePos.x * this.followSpeed, this.maxSpeed);
+      this.pos.y =
+        this.pos.y + Math.min(relativePos.y * this.followSpeed, this.maxSpeed);
+    }
+  }
+
+  die() {
+    const maxArea = this.manager.game.backgroundManager.maxArea;
+    this.pos.x = randomNumber(0, maxArea.x);
+    this.pos.y = randomNumber(0, maxArea.y);
+    this.manager.game.score++;
   }
 }
 class SpriteManager {
   sprites: GameSprite[] = [];
 
-  constructor(private game: Game) {}
+  constructor(public game: Game) {}
 
   add(sprite: GameSprite) {
     this.sprites.push(sprite);
@@ -65,8 +187,8 @@ class SpriteManager {
   draw() {
     this.sprites.forEach((sprite) => {
       const playerPos = this.game.player.pos;
-      sprite.sprite.x = (sprite.pos.x - playerPos.x) + 200;
-      sprite.sprite.y = (sprite.pos.y - playerPos.y) + 200;
+      sprite.sprite.x = sprite.pos.x - playerPos.x + 200;
+      sprite.sprite.y = sprite.pos.y - playerPos.y + 200;
       sprite.draw();
     });
   }
@@ -110,6 +232,10 @@ function parseBgId(bgId: string): Chunk {
 }
 function stringifyBgId(chunk: Chunk): string {
   return `${chunk.c}_${chunk.r}`;
+}
+
+function subtract(a: Point, b: Point): Point {
+  return { x: a.x - b.x, y: a.y - b.y };
 }
 
 abstract class UIWidget implements Drawable {
@@ -272,10 +398,11 @@ class BackgroundManager implements Drawable {
 
   readonly maxArea: Point = { x: 0, y: 0 };
 
+  readonly pressedKeys = { left: false, right: false, up: false, down: false };
+
   loc: Chunk;
 
   bgs: { [key: string]: Background } = {};
-
 
   toHide: Sprite[] = [];
 
@@ -300,24 +427,38 @@ class BackgroundManager implements Drawable {
     this.toHide = [];
     background("white");
     const pos = this.game.player.pos;
-    if (keyDown("up")) {
-      if (pos.y - this.speed > 0) {
-        pos.y -= this.speed;
+    if (!this.game.player.isDead) {
+      if (keyDown("up")) {
+        if (pos.y - this.speed > 0) {
+          pos.y -= this.speed;
+        }
+        this.pressedKeys.up = true;
+      } else {
+        this.pressedKeys.up = false;
       }
-    }
-    if (keyDown("down")) {
-      if (pos.y + this.speed < this.maxArea.y) {
-        pos.y += this.speed;
+      if (keyDown("down")) {
+        if (pos.y + this.speed < this.maxArea.y) {
+          pos.y += this.speed;
+        }
+        this.pressedKeys.down = true;
+      } else {
+        this.pressedKeys.down = false;
       }
-    }
-    if (keyDown("left")) {
-      if (pos.x - this.speed > 0) {
-        pos.x -= this.speed;
+      if (keyDown("left")) {
+        if (pos.x - this.speed > 0) {
+          pos.x -= this.speed;
+        }
+        this.pressedKeys.left = true;
+      } else {
+        this.pressedKeys.left = false;
       }
-    }
-    if (keyDown("right")) {
-      if (pos.x + this.speed < this.maxArea.x) {
-        pos.x += this.speed;
+      if (keyDown("right")) {
+        if (pos.x + this.speed < this.maxArea.x) {
+          pos.x += this.speed;
+        }
+        this.pressedKeys.right = true;
+      } else {
+        this.pressedKeys.right = false;
       }
     }
     // this.bgs["1-1"].sprite.x = -this.pos.x + 400;
@@ -413,14 +554,19 @@ class Game {
   backgroundManager: BackgroundManager = new BackgroundManager(this, "1_1", [
     "1_1",
     "1_2",
-    "1_3"
+    "1_3",
   ]);
   spriteManager: SpriteManager = new SpriteManager(this);
   uiManager: UIManager = new UIManager(this);
 
-  player: Player = new Player();
+  player: Player = new Player(this);
+  enemy = new Enemy(this.spriteManager);
+
+  score = 0;
+  lastScore = 0;
+  highScore = 0;
   setup() {
-    this.spriteManager.add(new Enemy());
+    this.spriteManager.add(this.enemy);
     setInterval(this.backgroundLoop, 1000);
   }
 
@@ -429,19 +575,27 @@ class Game {
   draw() {
     this.spriteManager.draw();
     this.backgroundManager.draw();
+    this.player.draw();
     drawSprites();
     this.uiManager.draw();
+
+    if(this.player.isDead){
+      textSize(32);
+      text("You died", 140, 180);
+      text(`Score: ${this.lastScore}`, 140, 220);
+      text(`High Score: ${this.highScore}`, 115, 260);
+    }
+    
     fill("gray");
     noStroke();
-    text(
-      `${this.player.pos.x} ${this.player.pos.y}`,
-      10,
-      10
-    );
+    textSize(12)
+    text(`${this.player.pos.x} ${this.player.pos.y}`, 10, 10);
     const localPos = globalToLocal(this.player.pos);
     text(`${Math.round(localPos.x)} ${Math.round(localPos.y)}`, 10, 30);
     const chunk = globalToChunk(this.player.pos);
     text(`${chunk.c} ${chunk.r}`, 10, 50);
+    textSize(30)
+    text(`${this.score}`, 300, 30);
   }
 }
 const game = new Game();
